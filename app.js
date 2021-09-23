@@ -11,13 +11,12 @@
  app.use(morgan('short'));
  
  //-- Get access to values in the .env file
+ //-- Import and load '.env' file
+ require('dotenv').config();  // equivalent to lines below
  // const dotenv = require('dotenv');
  // dotenv.config();
- require('dotenv').config();  // equivalent to lines above
 
- //-- Get port from .env file
- const port = process.env.PORT;
- 
+ //-- Use process.env to access the variables in '.env' file
  const pool = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -25,33 +24,36 @@
     database: process.env.DB_NAME
  });
 
- app.use(async function mysqlConnection(req, res, next) {
-    try {
-      req.db = await pool.getConnection();
-      req.db.connection.config.namedPlaceholders = true;
+ const port = process.env.PORT;
 
-      //-- Traditional mode ensures not null is respected for unsupplied
-      //-- fields, ensures valid JavaScript dates, etc.
-      await req.db.query('SET SESSION sql_mode = "TRADITIONAL"');
-      await req.db.query(`SET time_zone = '-8:00'`);
+app.use(async function mysqlConnection(req, res, next) {
+  try {
+    req.db = await pool.getConnection();
+    req.db.connection.config.namedPlaceholders = true;
 
-      //-- Go to the rest of the middleware until it hits an endpoint 
-      await next();
-      //-- Returns to here after it finishes the endpoint to release the db connection
-      req.db.release();
-    } catch(err) {
-      //-- If anything downstream throws an error, we must release the 
-      //-- connection allocated for the request
-      console.log('ERROR detected');
-      console.log(err);
-      if (req.db) req.db.release();
-      throw err;
-    }
- });
+    //-- Traditional mode ensures not null is respected for unsupplied
+    //-- fields, ensures valid JavaScript dates, etc.
+    await req.db.query('SET SESSION sql_mode = "TRADITIONAL"');
+    await req.db.query(`SET time_zone = '-8:00'`);
 
- app.use(cors());
+    //-- Go to the rest of the middleware until it hits an endpoint 
+    await next();
+
+    //-- Returns to here after it finishes the endpoint to release the db connection
+    req.db.release();
+  } catch(err) {
+    //-- If anything downstream throws an error, we must release the 
+    //-- connection allocated for the request
+    console.log('ERROR detected');
+    console.log(err);
+    if (req.db) req.db.release();
+    throw err;
+  }
+});
+
+app.use(cors());
  
- app.use(bodyParser.json());
+app.use(bodyParser.json());
 
 app.get('/cars', async function(req, res) {
   try {
@@ -68,7 +70,7 @@ app.get('/cars/:id', async function(req, res) {
   try {
     console.log('GET /cars/:id endpoint');
     const { id } = req.params;
-    const [cars] = await req.db.query(
+    const [[cars]] = await req.db.query(
           "SELECT * FROM cars WHERE id = :id", {id});
     // res.json({message: "ALL rows returned. ", cars});
     res.json(cars);
@@ -147,4 +149,5 @@ app.delete('/cars/:id', async function(req, res){
   }
 });
  
+ //-- Listen for requests
  app.listen(port, () => console.log(`API Example listening on http://localhost:3000`));
